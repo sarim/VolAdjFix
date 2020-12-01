@@ -178,7 +178,7 @@ namespace VideoPlayerController
             try
             {
                 deviceEnumerator = (IMMDeviceEnumerator) (new MMDeviceEnumerator());
-                deviceEnumerator.GetDefaultAudioEndpoint(EDataFlow.eRender, ERole.eMultimedia, out speakers);
+                deviceEnumerator.GetDefaultAudioEndpoint(EDataFlow.eCapture, ERole.eMultimedia, out speakers);
 
                 Guid IID_IAudioEndpointVolume = typeof (IAudioEndpointVolume).GUID;
                 object o;

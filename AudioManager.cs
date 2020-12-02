@@ -38,6 +38,8 @@ namespace VideoPlayerController
             }
         }
 
+
+
         /// <summary>
         /// Gets the mute state of the master volume. 
         /// While the volume can be muted the <see cref="GetMasterVolume"/> will still return the pre-muted volume value.
@@ -303,8 +305,158 @@ namespace VideoPlayerController
             }
         }
 
+        public static void OnVolumeNotification(AudioVolumeNotificationData notificationData)
+        {
+            
+        }
+
         #endregion
 
+    }
+
+    /// <summary>
+    /// Support for Marshal Methods in both UWP and .NET 3.5
+    /// </summary>
+    public static class MarshalHelpers
+    {
+        /// <summary>
+        /// SizeOf a structure
+        /// </summary>
+        public static int SizeOf<T>()
+        {
+#if NET35
+            return Marshal.SizeOf(typeof (T));
+#else
+            return Marshal.SizeOf<T>();
+#endif
+        }
+
+        /// <summary>
+        /// Offset of a field in a structure
+        /// </summary>
+        public static IntPtr OffsetOf<T>(string fieldName)
+        {
+#if NET35
+            return Marshal.OffsetOf(typeof(T), fieldName);
+#else
+            return Marshal.OffsetOf<T>(fieldName);
+#endif
+        }
+
+        /// <summary>
+        /// Pointer to Structure
+        /// </summary>
+        public static T PtrToStructure<T>(IntPtr pointer)
+        {
+#if NET35
+            return (T)Marshal.PtrToStructure(pointer, typeof(T));
+#else
+            return Marshal.PtrToStructure<T>(pointer);
+#endif
+        }
+    }
+
+
+    internal struct AudioVolumeNotificationDataStruct
+    {
+        public Guid guidEventContext;
+        public bool bMuted;
+        public float fMasterVolume;
+        public uint nChannels;
+        public float ChannelVolume;
+    }
+
+    internal class AudioEndpointVolumeCallback : IAudioEndpointVolumeCallback
+    {
+        // private readonly AudioManager parent;
+        
+        // internal AudioEndpointVolumeCallback(AudioManager parent)
+        // {
+        //     this.parent = parent;
+        // }
+        
+        public void OnNotify(IntPtr notifyData)
+        {
+            //Since AUDIO_VOLUME_NOTIFICATION_DATA is dynamic in length based on the
+            //number of audio channels available we cannot just call PtrToStructure 
+            //to get all data, thats why it is split up into two steps, first the static
+            //data is marshalled into the data structure, then with some IntPtr math the
+            //remaining floats are read from memory.
+            //
+            var data = MarshalHelpers.PtrToStructure<AudioVolumeNotificationDataStruct>(notifyData);
+            
+            //Determine offset in structure of the first float
+            var offset = MarshalHelpers.OffsetOf<AudioVolumeNotificationDataStruct>("ChannelVolume");
+            //Determine offset in memory of the first float
+            var firstFloatPtr = (IntPtr)((long)notifyData + (long)offset);
+
+            var voldata = new float[data.nChannels];
+            
+            //Read all floats from memory.
+            for (int i = 0; i < data.nChannels; i++)
+            {
+                voldata[i] = MarshalHelpers.PtrToStructure<float>(firstFloatPtr);
+            }
+
+            //Create combined structure and Fire Event in parent class.
+            var notificationData = new AudioVolumeNotificationData(data.guidEventContext, data.bMuted, data.fMasterVolume, voldata, data.guidEventContext);
+            // parent.OnVolumeNotification(notificationData);
+        }
+    }
+
+
+    /// <summary>
+    /// Audio Volume Notification Data
+    /// </summary>
+    public class AudioVolumeNotificationData
+    {
+        /// <summary>
+        /// Event Context
+        /// </summary>
+        public Guid EventContext { get; private set; }
+
+        /// <summary>
+        /// Muted
+        /// </summary>
+        public bool Muted { get; private set; }
+
+        /// <summary>
+        /// Guid that raised the event
+        /// </summary>
+        public Guid Guid { get; private set; }
+
+        /// <summary>
+        /// Master Volume
+        /// </summary>
+        public float MasterVolume { get; private set; }
+
+        /// <summary>
+        /// Channels
+        /// </summary>
+        public int Channels { get; private set; }
+
+        /// <summary>
+        /// Channel Volume
+        /// </summary>
+        public float[] ChannelVolume { get; private set; }
+
+        /// <summary>
+        /// Audio Volume Notification Data
+        /// </summary>
+        /// <param name="eventContext"></param>
+        /// <param name="muted"></param>
+        /// <param name="masterVolume"></param>
+        /// <param name="channelVolume"></param>
+        /// <param name="guid"></param>
+        public AudioVolumeNotificationData(Guid eventContext, bool muted, float masterVolume, float[] channelVolume, Guid guid)
+        {
+            EventContext = eventContext;
+            Muted = muted;
+            MasterVolume = masterVolume;
+            Channels = channelVolume.Length;
+            ChannelVolume = channelVolume;
+            Guid = guid;
+        }
     }
 
     #region Abstracted COM interfaces from Windows CoreAudio API
@@ -437,15 +589,22 @@ namespace VideoPlayerController
         int SetDuckingPreference(bool optOut);
     }
 
+    [Guid("657804FA-D6AD-4496-8A60-352752AF4F89"),
+     InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    internal interface IAudioEndpointVolumeCallback
+    {
+        void OnNotify(IntPtr notifyData);
+    };
+
     // http://netcoreaudio.codeplex.com/SourceControl/latest#trunk/Code/CoreAudio/Interfaces/IAudioEndpointVolume.cs
     [Guid("5CDF2C82-841E-4546-9722-0CF74078229A"),InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-    public interface IAudioEndpointVolume
+    internal interface IAudioEndpointVolume
     {
         [PreserveSig]
-        int NotImpl1();
+        int RegisterControlChangeNotify(IAudioEndpointVolumeCallback pNotify);
 
         [PreserveSig]
-        int NotImpl2();
+        int UnregisterControlChangeNotify(IAudioEndpointVolumeCallback pNotify);
 
         /// <summary>
         /// Gets a count of the channels in the audio stream.

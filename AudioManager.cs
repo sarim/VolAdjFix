@@ -38,7 +38,25 @@ namespace VideoPlayerController
             }
         }
 
+        public static void SetMasterVolumeNotifier(VolumeListener listner)
+        {
+            IAudioEndpointVolume masterVol = null;
+            AudioEndpointVolumeCallback callBack;
+            try
+            {
+                masterVol = GetMasterVolumeObject();
+                if (masterVol == null)
+                    return;
 
+                callBack = new AudioEndpointVolumeCallback(listner);
+                Marshal.ThrowExceptionForHR(masterVol.RegisterControlChangeNotify(callBack));
+            }
+            finally
+            {
+                // if (masterVol != null)
+                    // Marshal.ReleaseComObject(masterVol);
+            }
+        }
 
         /// <summary>
         /// Gets the mute state of the master volume. 
@@ -305,13 +323,7 @@ namespace VideoPlayerController
             }
         }
 
-        public static void OnVolumeNotification(AudioVolumeNotificationData notificationData)
-        {
-            
-        }
-
         #endregion
-
     }
 
     /// <summary>
@@ -368,12 +380,12 @@ namespace VideoPlayerController
 
     internal class AudioEndpointVolumeCallback : IAudioEndpointVolumeCallback
     {
-        // private readonly AudioManager parent;
+        private readonly VolumeListener parent;
         
-        // internal AudioEndpointVolumeCallback(AudioManager parent)
-        // {
-        //     this.parent = parent;
-        // }
+        internal AudioEndpointVolumeCallback(VolumeListener parent)
+        {
+            this.parent = parent;
+        }
         
         public void OnNotify(IntPtr notifyData)
         {
@@ -400,7 +412,7 @@ namespace VideoPlayerController
 
             //Create combined structure and Fire Event in parent class.
             var notificationData = new AudioVolumeNotificationData(data.guidEventContext, data.bMuted, data.fMasterVolume, voldata, data.guidEventContext);
-            // parent.OnVolumeNotification(notificationData);
+            parent.OnVolumeNotification(notificationData);
         }
     }
 
